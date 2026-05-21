@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, Download, File, FileImage, FileSpreadsheet, FileText, FileType, Upload, X } from 'lucide-react'
+import mammoth from 'mammoth/mammoth.browser'
+import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { uploadToCloudinary } from '../lib/cloudinary'
 import { formatDisplayDate } from '../lib/date'
 import { lockBodyScroll, unlockBodyScroll } from '../lib/modalScrollLock'
 import { notifyError, notifyInfo } from '../lib/notify'
+import ThreeModelPreview from './ThreeModelPreview'
 
 const createRevisionRow = (index, targetDate = '') => ({
   label: index === 0 ? 'Submitted' : `Rev ${index}`,
@@ -46,26 +49,30 @@ const getFileMeta = (fileName = '') => {
   const ext = fileName.split('.').pop()?.toLowerCase() || ''
 
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-    return { icon: FileImage, accent: 'green', previewable: true, kind: 'image' }
+    return { icon: FileImage, accent: 'green', previewable: true, kind: 'image', ext }
   }
 
   if (ext === 'pdf') {
-    return { icon: FileText, accent: 'red', previewable: true, kind: 'pdf' }
+    return { icon: FileText, accent: 'red', previewable: true, kind: 'pdf', ext }
   }
 
   if (['xls', 'xlsx', 'csv'].includes(ext)) {
-    return { icon: FileSpreadsheet, accent: 'green', previewable: false, kind: 'spreadsheet' }
+    return { icon: FileSpreadsheet, accent: 'green', previewable: true, kind: 'spreadsheet', ext }
   }
 
   if (['doc', 'docx'].includes(ext)) {
-    return { icon: FileType, accent: 'blue', previewable: false, kind: 'document' }
+    return { icon: FileType, accent: 'blue', previewable: true, kind: 'document', ext }
   }
 
   if (['skp', 'dae', 'obj', 'fbx', '3ds'].includes(ext)) {
-    return { icon: Box, accent: 'blue', previewable: false, kind: 'model' }
+    return { icon: Box, accent: 'blue', previewable: false, kind: 'model', ext }
   }
 
-  return { icon: File, accent: 'slate', previewable: false, kind: 'file' }
+  if (['glb', 'gltf'].includes(ext)) {
+    return { icon: Box, accent: 'blue', previewable: true, kind: 'model3d', ext }
+  }
+
+  return { icon: File, accent: 'slate', previewable: false, kind: 'file', ext }
 }
 
 export default function ProductApprovalModal({
@@ -85,6 +92,9 @@ export default function ProductApprovalModal({
   const [previewFile, setPreviewFile] = useState(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState(false)
+  const [previewDocHtml, setPreviewDocHtml] = useState('')
+  const [previewSheetRows, setPreviewSheetRows] = useState([])
+  const [previewSheetName, setPreviewSheetName] = useState('')
 
   const latestRevisionIndex = useMemo(() => revisions.length - 1, [revisions])
 
@@ -102,14 +112,68 @@ export default function ProductApprovalModal({
     if (!previewFile) {
       setPreviewLoading(false)
       setPreviewError(false)
+      setPreviewDocHtml('')
+      setPreviewSheetRows([])
+      setPreviewSheetName('')
       return undefined
     }
 
     const isImage = previewFile.kind === 'image'
     const isPdf = previewFile.kind === 'pdf'
-    setPreviewLoading(isImage || isPdf)
+    const isDoc = previewFile.kind === 'document'
+    const isSheet = previewFile.kind === 'spreadsheet'
+    setPreviewLoading(isImage || isPdf || isDoc || isSheet)
     setPreviewError(false)
-    return undefined
+
+    let cancelled = false
+
+    const loadStructuredPreview = async () => {
+      try {
+        if (isDoc) {
+          const response = await fetch(previewFile.url)
+          if (!response.ok) throw new Error('Failed to fetch document')
+
+          const arrayBuffer = await response.arrayBuffer()
+          const result = await mammoth.convertToHtml({ arrayBuffer })
+          if (cancelled) return
+
+          setPreviewDocHtml(result.value || '')
+          setPreviewLoading(false)
+          return
+        }
+
+        if (isSheet) {
+          const response = await fetch(previewFile.url)
+          if (!response.ok) throw new Error('Failed to fetch spreadsheet')
+
+          const arrayBuffer = await response.arrayBuffer()
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+          const firstSheetName = workbook.SheetNames[0]
+          const sheet = workbook.Sheets[firstSheetName]
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false })
+
+          if (cancelled) return
+
+          setPreviewSheetName(firstSheetName || '')
+          setPreviewSheetRows(rows || [])
+          setPreviewLoading(false)
+        }
+      } catch (error) {
+        console.error('Preview parse error:', error)
+        if (!cancelled) {
+          setPreviewLoading(false)
+          setPreviewError(true)
+        }
+      }
+    }
+
+    if (isDoc || isSheet) {
+      loadStructuredPreview()
+    }
+
+    return () => {
+      cancelled = true
+    }
   }, [previewFile])
 
   if (!open) return null
@@ -269,23 +333,6 @@ export default function ProductApprovalModal({
             </div>
           </div>
 
-          <div className="approval-table-toolbar">
-            <div className="approval-status-legend">
-              <span className="approval-legend-item">
-                <span className="approval-legend-swatch danger" />
-                = Upload perlu diselesaikan
-              </span>
-              <span className="approval-legend-item">
-                <span className="approval-legend-swatch warning" />
-                = Menunggu approve / revisi
-              </span>
-              <span className="approval-legend-item">
-                <span className="approval-legend-swatch success" />
-                = Approved
-              </span>
-            </div>
-          </div>
-
           <div className="table-scroll approval-modal-table">
             <table className="table table-sm">
               <thead>
@@ -433,7 +480,13 @@ export default function ProductApprovalModal({
                   ? 'Image preview'
                   : previewFile.kind === 'pdf'
                     ? 'PDF preview'
-                    : 'Preview not available'}
+                    : previewFile.kind === 'document'
+                      ? 'DOCX preview'
+                      : previewFile.kind === 'spreadsheet'
+                        ? 'XLSX preview'
+                        : previewFile.kind === 'model3d'
+                          ? '3D preview'
+                        : 'Preview not available'}
               </p>
             </div>
 
@@ -470,6 +523,37 @@ export default function ProductApprovalModal({
                       className="approval-preview-media"
                       style={{ opacity: previewLoading ? 0 : 1 }}
                     />
+                  ) : previewFile.kind === 'document' ? (
+                    <div
+                      className="approval-doc-preview"
+                      style={{ opacity: previewLoading ? 0 : 1 }}
+                      dangerouslySetInnerHTML={{
+                        __html: previewDocHtml || '<p class="approval-doc-empty">No document content.</p>'
+                      }}
+                    />
+                  ) : previewFile.kind === 'spreadsheet' ? (
+                    <div className="approval-sheet-preview" style={{ opacity: previewLoading ? 0 : 1 }}>
+                      <div className="approval-sheet-title">
+                        {previewSheetName || 'Sheet 1'}
+                      </div>
+                      <div className="approval-sheet-scroll">
+                        <table className="approval-sheet-table">
+                          <tbody>
+                            {previewSheetRows.map((row, rowIndex) => (
+                              <tr key={`sheet-row-${rowIndex}`}>
+                                {row.map((cell, cellIndex) => (
+                                  <td key={`sheet-cell-${rowIndex}-${cellIndex}`}>
+                                    {cell === null || cell === undefined || cell === '' ? '-' : String(cell)}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : previewFile.kind === 'model3d' ? (
+                    <ThreeModelPreview url={previewFile.url} name={previewFile.name} />
                   ) : (
                     <iframe
                       src={previewFile.url}
@@ -498,6 +582,8 @@ export default function ProductApprovalModal({
                       ? 'DOCX preview needs an extra library if you want it rendered in-app.'
                       : previewFile.kind === 'spreadsheet'
                         ? 'XLSX preview also needs an extra parser / renderer.'
+                        : previewFile.kind === 'model'
+                          ? 'DWG/SKP perlu dikonversi backend menjadi GLB sebelum bisa dipreview dengan Three.js.'
                         : 'Use download to open this file locally.'}
                   </p>
                 </div>

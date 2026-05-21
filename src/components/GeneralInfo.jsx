@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
+import mammoth from "mammoth/mammoth.browser";
+import * as XLSX from "xlsx";
 import { uploadToCloudinary } from "../lib/cloudinary";
 import { formatDisplayDate } from "../lib/date";
 import { supabase } from "../lib/supabase";
@@ -28,6 +30,9 @@ export default function GeneralInfo({ project }) {
   const [previewFile, setPreviewFile] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [previewDocHtml, setPreviewDocHtml] = useState("");
+  const [previewSheetRows, setPreviewSheetRows] = useState([]);
+  const [previewSheetName, setPreviewSheetName] = useState("");
 
   useEffect(() => {
     if (!project?.id) {
@@ -65,13 +70,67 @@ export default function GeneralInfo({ project }) {
     if (!previewFile) {
       setPreviewLoading(false);
       setPreviewError(false);
+      setPreviewDocHtml("");
+      setPreviewSheetRows([]);
+      setPreviewSheetName("");
       return;
     }
 
-    const isImage = previewFile.file_type?.includes("image");
-    const isPdf = previewFile.file_type?.includes("pdf");
-    setPreviewLoading(isImage || isPdf);
+    const ext = previewFile.file_name.split(".").pop().toLowerCase();
+    const isImage = previewFile.file_type?.includes("image") || ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+    const isPdf = previewFile.file_type?.includes("pdf") || ext === "pdf";
+    const isDoc = ["doc", "docx"].includes(ext);
+    const isSheet = ["xls", "xlsx", "csv"].includes(ext);
+    setPreviewLoading(isImage || isPdf || isDoc || isSheet);
     setPreviewError(false);
+    setPreviewDocHtml("");
+    setPreviewSheetRows([]);
+    setPreviewSheetName("");
+
+    let cancelled = false;
+
+    const loadStructuredPreview = async () => {
+      try {
+        if (isDoc) {
+          const response = await fetch(previewFile.file_url);
+          if (!response.ok) throw new Error("Failed to fetch document");
+          const arrayBuffer = await response.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          if (cancelled) return;
+          setPreviewDocHtml(result.value || "");
+          setPreviewLoading(false);
+          return;
+        }
+
+        if (isSheet) {
+          const response = await fetch(previewFile.file_url);
+          if (!response.ok) throw new Error("Failed to fetch spreadsheet");
+          const arrayBuffer = await response.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+          if (cancelled) return;
+          setPreviewSheetName(firstSheetName || "");
+          setPreviewSheetRows(rows || []);
+          setPreviewLoading(false);
+        }
+      } catch (error) {
+        console.error("Preview parse error:", error);
+        if (!cancelled) {
+          setPreviewLoading(false);
+          setPreviewError(true);
+        }
+      }
+    };
+
+    if (isDoc || isSheet) {
+      loadStructuredPreview();
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [previewFile]);
 
   const handleFileUpload = async (event) => {
@@ -398,6 +457,94 @@ export default function GeneralInfo({ project }) {
                             transition: "opacity 0.2s ease",
                           }}
                         />
+                      )}
+                    </div>
+                  ) : /\.(doc|docx)$/i.test(previewFile.file_name) ? (
+                    <div className="preview-stage">
+                      {previewLoading && (
+                        <div className="preview-loading">
+                          <span className="loading loading-spinner loading-lg"></span>
+                          <span className="preview-loading-text">
+                            Loading document preview...
+                          </span>
+                        </div>
+                      )}
+                      {previewError ? (
+                        <div className="preview-fallback">
+                          <p className="preview-fallback-title">
+                            Document preview failed
+                          </p>
+                          <a
+                            href={previewFile.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline"
+                          >
+                            Open File
+                          </a>
+                        </div>
+                      ) : (
+                        <div
+                          className="approval-doc-preview"
+                          style={{ opacity: previewLoading ? 0 : 1 }}
+                          dangerouslySetInnerHTML={{
+                            __html:
+                              previewDocHtml ||
+                              '<p class="approval-doc-empty">No document content.</p>',
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : /\.(xls|xlsx|csv)$/i.test(previewFile.file_name) ? (
+                    <div className="preview-stage">
+                      {previewLoading && (
+                        <div className="preview-loading">
+                          <span className="loading loading-spinner loading-lg"></span>
+                          <span className="preview-loading-text">
+                            Loading spreadsheet preview...
+                          </span>
+                        </div>
+                      )}
+                      {previewError ? (
+                        <div className="preview-fallback">
+                          <p className="preview-fallback-title">
+                            Spreadsheet preview failed
+                          </p>
+                          <a
+                            href={previewFile.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-outline"
+                          >
+                            Open File
+                          </a>
+                        </div>
+                      ) : (
+                        <div
+                          className="approval-sheet-preview"
+                          style={{ width: "100%", maxHeight: "100%", opacity: previewLoading ? 0 : 1 }}
+                        >
+                          <div className="approval-sheet-title">
+                            {previewSheetName || "Sheet 1"}
+                          </div>
+                          <div className="approval-sheet-scroll">
+                            <table className="approval-sheet-table">
+                              <tbody>
+                                {previewSheetRows.map((row, rowIndex) => (
+                                  <tr key={`sheet-row-${rowIndex}`}>
+                                    {row.map((cell, cellIndex) => (
+                                      <td key={`sheet-cell-${rowIndex}-${cellIndex}`}>
+                                        {cell === null || cell === undefined || cell === ""
+                                          ? "-"
+                                          : String(cell)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       )}
                     </div>
                   ) : previewFile.file_name.match(

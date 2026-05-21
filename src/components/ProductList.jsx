@@ -136,6 +136,20 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
   return (
     <div className="card" style={{ padding: '16px 16px 22px', marginBottom: '20px' }}>
       <h2 className="table-title">List Product</h2>
+      <div className="product-status-legend">
+        <span className="approval-legend-item">
+          <span className="approval-legend-swatch danger" />
+          = Upload perlu diselesaikan
+        </span>
+        <span className="approval-legend-item">
+          <span className="approval-legend-swatch warning" />
+          = Menunggu approve / revisi
+        </span>
+        <span className="approval-legend-item">
+          <span className="approval-legend-swatch success" />
+          = Approved
+        </span>
+      </div>
       <div className="table-scroll">
         <table className="table product product-table">
           <thead>

@@ -1337,6 +1337,14 @@ a {
     margin: 0 0 10px;
 }
 
+.product-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px 16px;
+    margin: -2px 0 12px;
+}
+
 .approval-status-legend {
     display: flex;
     flex-wrap: wrap;
@@ -1495,6 +1503,67 @@ a {
     overflow: hidden;
 }
 
+.approval-model-stage {
+    position: relative;
+    width: 100%;
+    min-height: 420px;
+    height: 100%;
+}
+
+.approval-model-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 420px;
+}
+
+.approval-model-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 420px;
+    text-align: center;
+}
+
+.approval-doc-preview {
+    width: 100%;
+    max-height: 70vh;
+    overflow: auto;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.approval-doc-preview h1,
+.approval-doc-preview h2,
+.approval-doc-preview h3,
+.approval-doc-preview h4,
+.approval-doc-preview h5,
+.approval-doc-preview h6 {
+    color: var(--dark);
+    margin-top: 0;
+}
+
+.approval-doc-preview table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.approval-doc-preview td,
+.approval-doc-preview th {
+    border: 1px solid #dbe5f3;
+    padding: 8px 10px;
+}
+
+.approval-doc-empty {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
 .approval-preview-media {
     max-width: 100%;
     max-height: 70vh;
@@ -1507,6 +1576,54 @@ a {
     height: 70vh;
     border: 0;
     transition: opacity 0.2s ease;
+}
+
+.approval-sheet-preview {
+    width: 100%;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.approval-sheet-title {
+    color: var(--dark);
+    font-size: 14px;
+    font-weight: 800;
+    text-align: left;
+}
+
+.approval-sheet-scroll {
+    width: 100%;
+    max-height: 64vh;
+    overflow: auto;
+    border: 1px solid #dbe5f3;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.approval-sheet-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.approval-sheet-table td {
+    min-width: 96px;
+    padding: 8px 10px;
+    border-right: 1px solid #edf2f7;
+    border-bottom: 1px solid #edf2f7;
+    text-align: left;
+    vertical-align: top;
+    color: var(--text);
+}
+
+.approval-sheet-table tr:last-child td {
+    border-bottom: none;
+}
+
+.approval-sheet-table td:last-child {
+    border-right: none;
 }
 
 .approval-preview-fallback-file {
