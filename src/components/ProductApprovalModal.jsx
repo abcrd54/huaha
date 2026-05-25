@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Box, Download, File, FileImage, FileSpreadsheet, FileText, FileType, Upload, X } from 'lucide-react'
-import mammoth from 'mammoth/mammoth.browser'
-import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { uploadToCloudinary } from '../lib/cloudinary'
 import { formatDisplayDate } from '../lib/date'
 import { lockBodyScroll, unlockBodyScroll } from '../lib/modalScrollLock'
 import { notifyError, notifyInfo } from '../lib/notify'
-import ThreeModelPreview from './ThreeModelPreview'
+
+const ThreeModelPreview = lazy(() => import('./ThreeModelPreview'))
 
 const createRevisionRow = (index, targetDate = '') => ({
   label: index === 0 ? 'Submitted' : `Rev ${index}`,
@@ -130,6 +129,7 @@ export default function ProductApprovalModal({
     const loadStructuredPreview = async () => {
       try {
         if (isDoc) {
+          const mammoth = await import('mammoth/mammoth.browser')
           const response = await fetch(previewFile.url)
           if (!response.ok) throw new Error('Failed to fetch document')
 
@@ -143,6 +143,7 @@ export default function ProductApprovalModal({
         }
 
         if (isSheet) {
+          const XLSX = await import('xlsx')
           const response = await fetch(previewFile.url)
           if (!response.ok) throw new Error('Failed to fetch spreadsheet')
 
@@ -265,6 +266,68 @@ export default function ProductApprovalModal({
     await persistRevisions(nextRevisions)
   }
 
+  const handleReplaceFile = async (revisionIndex, fileIndex, nextFile) => {
+    if (!nextFile) return
+
+    setSaving(true)
+    try {
+      const uploadedUrl = await uploadToCloudinary(nextFile)
+      const nextRevisions = revisions.map((revision, currentRevisionIndex) => {
+        if (currentRevisionIndex !== revisionIndex) {
+          return revision
+        }
+
+        const nextFiles = [...(revision.files || [])]
+        nextFiles[fileIndex] = {
+          url: uploadedUrl,
+          name: nextFile.name
+        }
+
+        return {
+          ...revision,
+          files: nextFiles,
+          uploaded_at: new Date().toISOString(),
+          status: 'PENDING',
+          reviewed_at: null
+        }
+      })
+
+      await persistRevisions(nextRevisions)
+    } catch (error) {
+      console.error('Replace file error:', error)
+      await notifyError('Failed to replace file', error.message || '')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteFile = async (revisionIndex, fileIndex) => {
+    setSaving(true)
+    try {
+      const nextRevisions = revisions.map((revision, currentRevisionIndex) => {
+        if (currentRevisionIndex !== revisionIndex) {
+          return revision
+        }
+
+        const nextFiles = (revision.files || []).filter((_, currentFileIndex) => currentFileIndex !== fileIndex)
+        return {
+          ...revision,
+          files: nextFiles,
+          uploaded_at: nextFiles.length ? revision.uploaded_at : null,
+          status: nextFiles.length ? 'PENDING' : 'EMPTY',
+          reviewed_at: null
+        }
+      })
+
+      await persistRevisions(nextRevisions)
+    } catch (error) {
+      console.error('Delete file error:', error)
+      await notifyError('Failed to delete file', error.message || '')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleRequestRevision = async (index) => {
     if (!nextTargetDate) {
       await notifyInfo('Please select a target date for the next revision')
@@ -360,18 +423,45 @@ export default function ProductApprovalModal({
                       <td>
                         {fileCount > 0 ? (
                           <div className="approval-file-list">
-                            {revision.files.map((file) => (
-                              <button
+                            {revision.files.map((file, fileIndex) => (
+                              <div
                                 key={`${revision.label}-${file.name}-${file.url}`}
-                                type="button"
-                                className="approval-file-link approval-file-button"
-                                onClick={() => {
-                                  const meta = getFileMeta(file.name)
-                                  setPreviewFile({ ...file, ...meta })
-                                }}
+                                className="approval-file-item"
                               >
-                                {file.name}
-                              </button>
+                                <button
+                                  type="button"
+                                  className="approval-file-link approval-file-button"
+                                  onClick={() => {
+                                    const meta = getFileMeta(file.name)
+                                    setPreviewFile({ ...file, ...meta })
+                                  }}
+                                >
+                                  {file.name}
+                                </button>
+                                <div className="approval-file-actions">
+                                  <label className="btn btn-xs btn-outline approval-file-mini-action">
+                                    Ganti
+                                    <input
+                                      type="file"
+                                      style={{ display: 'none' }}
+                                      onChange={(event) => {
+                                        handleReplaceFile(index, fileIndex, event.target.files?.[0])
+                                        event.target.value = ''
+                                      }}
+                                      disabled={saving}
+                                      accept=".skp,.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.csv,.glb,.gltf"
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs btn-outline approval-file-mini-action danger"
+                                    onClick={() => handleDeleteFile(index, fileIndex)}
+                                    disabled={saving}
+                                  >
+                                    Hapus
+                                  </button>
+                                </div>
+                              </div>
                             ))}
                           </div>
                         ) : (
@@ -553,7 +643,16 @@ export default function ProductApprovalModal({
                       </div>
                     </div>
                   ) : previewFile.kind === 'model3d' ? (
-                    <ThreeModelPreview url={previewFile.url} name={previewFile.name} />
+                    <Suspense
+                      fallback={
+                        <div className="preview-loading">
+                          <span className="loading loading-spinner loading-lg" />
+                          <span className="preview-loading-text">Loading 3D preview...</span>
+                        </div>
+                      }
+                    >
+                      <ThreeModelPreview url={previewFile.url} name={previewFile.name} />
+                    </Suspense>
                   ) : (
                     <iframe
                       src={previewFile.url}

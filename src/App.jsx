@@ -85,6 +85,11 @@ export default function App() {
     setShowProductDetail(true)
   }
 
+  const handleAddProduct = () => {
+    setEditingProduct(null)
+    setShowProductDetail(true)
+  }
+
   const handleCloseProductDetail = () => {
     setShowProductDetail(false)
     setEditingProduct(null)
@@ -206,6 +211,7 @@ export default function App() {
 
         <div className="section-space section-inset">
           <ProductList
+            onAddItem={handleAddProduct}
             onSelectItem={handleSelectItem}
             refreshKey={productListVersion}
           />

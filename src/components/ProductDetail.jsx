@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useStore } from '../stores/useStore'
-import { X } from 'lucide-react'
+import { uploadToCloudinary } from '../lib/cloudinary'
+import { ImagePlus, Trash2, X } from 'lucide-react'
 import { lockBodyScroll, unlockBodyScroll } from '../lib/modalScrollLock'
 import { notifyError, notifyInfo, notifySuccess } from '../lib/notify'
 
@@ -22,17 +23,16 @@ const emptyForm = {
   foam: '',
   others_material: '',
   brass_handles: '',
-  requested_date: '',
   target_date: '',
-  priority: 'MEDIUM',
-  remarks: '',
-  status: 'DRAFT'
+  remarks: ''
 }
 
 export default function ProductDetail({ item, onClose, onSave }) {
   const { selectedProject } = useStore()
   const [formData, setFormData] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [pictureFile, setPictureFile] = useState(null)
+  const [picturePreview, setPicturePreview] = useState('')
 
   useEffect(() => {
     if (item) {
@@ -53,16 +53,17 @@ export default function ProductDetail({ item, onClose, onSave }) {
         foam: item.foam || '',
         others_material: item.others_material || '',
         brass_handles: item.brass_handles || '',
-        requested_date: item.requested_date || '',
         target_date: item.target_date || '',
-        priority: item.priority || 'MEDIUM',
-        remarks: item.remarks || '',
-        status: item.status || 'DRAFT'
+        remarks: item.remarks || ''
       })
+      setPictureFile(null)
+      setPicturePreview(item.picture_url || '')
       return
     }
 
     setFormData(emptyForm)
+    setPictureFile(null)
+    setPicturePreview('')
   }, [item])
 
   useEffect(() => {
@@ -70,9 +71,41 @@ export default function ProductDetail({ item, onClose, onSave }) {
     return () => unlockBodyScroll()
   }, [])
 
+  useEffect(() => () => {
+    if (picturePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(picturePreview)
+    }
+  }, [picturePreview])
+
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData((current) => ({ ...current, [name]: value }))
+  }
+
+  const handlePictureChange = (event) => {
+    const nextFile = event.target.files?.[0]
+    if (!nextFile) return
+
+    setPictureFile(nextFile)
+    setPicturePreview((current) => {
+      if (current?.startsWith('blob:')) {
+        URL.revokeObjectURL(current)
+      }
+
+      return URL.createObjectURL(nextFile)
+    })
+  }
+
+  const handleRemovePicture = () => {
+    setPictureFile(null)
+    setPicturePreview((current) => {
+      if (current?.startsWith('blob:')) {
+        URL.revokeObjectURL(current)
+      }
+
+      return ''
+    })
+    setFormData((current) => ({ ...current, picture_url: '' }))
   }
 
   const handleSubmit = async (e) => {
@@ -84,8 +117,14 @@ export default function ProductDetail({ item, onClose, onSave }) {
 
     setSaving(true)
     try {
+      let pictureUrl = formData.picture_url
+      if (pictureFile) {
+        pictureUrl = await uploadToCloudinary(pictureFile)
+      }
+
       const payload = {
         ...formData,
+        picture_url: pictureUrl,
         project_id: selectedProject.id,
         length_mm: formData.length_mm ? parseFloat(formData.length_mm) : null,
         depth_mm: formData.depth_mm ? parseFloat(formData.depth_mm) : null,
@@ -138,6 +177,63 @@ export default function ProductDetail({ item, onClose, onSave }) {
 
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-4">
+            <div className="form-control col-span-2">
+              <label className="label">
+                <span className="label-text">Picture</span>
+              </label>
+              <div className="product-image-field">
+                <div className="product-image-preview-card">
+                  {picturePreview ? (
+                    <img
+                      src={picturePreview}
+                      alt={formData.product_name || formData.code || 'Product preview'}
+                      className="product-image-preview"
+                    />
+                  ) : (
+                    <div className="product-image-placeholder">
+                      <ImagePlus size={32} />
+                      <span>No image selected</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="product-image-upload-card">
+                  <div className="product-image-upload-copy">
+                    <div className="product-image-upload-title">Product image</div>
+                    <div className="product-image-upload-text">
+                      Upload a clean product reference. JPG, PNG, or WEBP works best.
+                    </div>
+                  </div>
+
+                  <div className="product-image-upload-actions">
+                    <label className="btn btn-outline product-image-upload-button">
+                      <ImagePlus size={16} />
+                      {picturePreview ? 'Change Image' : 'Choose Image'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePictureChange}
+                        style={{ display: 'none' }}
+                        disabled={saving}
+                      />
+                    </label>
+
+                    {picturePreview && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost product-image-remove-button"
+                        onClick={handleRemovePicture}
+                        disabled={saving}
+                      >
+                        <Trash2 size={15} />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="form-control">
               <label className="label">
                 <span className="label-text">No *</span>
@@ -202,20 +298,6 @@ export default function ProductDetail({ item, onClose, onSave }) {
                 value={formData.product_name}
                 onChange={handleChange}
                 className="input input-bordered input-sm"
-              />
-            </div>
-
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Picture URL</span>
-              </label>
-              <input
-                type="url"
-                name="picture_url"
-                value={formData.picture_url}
-                onChange={handleChange}
-                className="input input-bordered input-sm"
-                placeholder="https://..."
               />
             </div>
 
@@ -355,19 +437,6 @@ export default function ProductDetail({ item, onClose, onSave }) {
 
             <div className="form-control">
               <label className="label">
-                <span className="label-text">Requested Date</span>
-              </label>
-              <input
-                type="date"
-                name="requested_date"
-                value={formData.requested_date}
-                onChange={handleChange}
-                className="input input-bordered input-sm"
-              />
-            </div>
-
-            <div className="form-control">
-              <label className="label">
                 <span className="label-text">Target Date</span>
               </label>
               <input
@@ -377,40 +446,6 @@ export default function ProductDetail({ item, onClose, onSave }) {
                 onChange={handleChange}
                 className="input input-bordered input-sm"
               />
-            </div>
-
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Priority</span>
-              </label>
-              <select
-                name="priority"
-                value={formData.priority}
-                onChange={handleChange}
-                className="select select-bordered select-sm"
-              >
-                <option value="LOW">LOW</option>
-                <option value="MEDIUM">MEDIUM</option>
-                <option value="HIGH">HIGH</option>
-              </select>
-            </div>
-
-            <div className="form-control">
-              <label className="label">
-                <span className="label-text">Status</span>
-              </label>
-              <select
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="select select-bordered select-sm"
-              >
-                <option value="DRAFT">DRAFT</option>
-                <option value="PENDING">PENDING</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="REJECTED">REJECTED</option>
-                <option value="COMPLETED">COMPLETED</option>
-              </select>
             </div>
 
             <div className="form-control col-span-2">

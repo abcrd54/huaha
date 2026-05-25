@@ -1,6 +1,4 @@
 import { useMemo, useState, useEffect } from "react";
-import mammoth from "mammoth/mammoth.browser";
-import * as XLSX from "xlsx";
 import { uploadToCloudinary } from "../lib/cloudinary";
 import { formatDisplayDate } from "../lib/date";
 import { supabase } from "../lib/supabase";
@@ -14,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { lockBodyScroll, unlockBodyScroll } from "../lib/modalScrollLock";
-import { notifyError } from "../lib/notify";
+import { notifyConfirm, notifyError } from "../lib/notify";
 
 const emptyInfo = [
   ["Company", "-"],
@@ -92,6 +90,7 @@ export default function GeneralInfo({ project }) {
     const loadStructuredPreview = async () => {
       try {
         if (isDoc) {
+          const mammoth = await import("mammoth/mammoth.browser");
           const response = await fetch(previewFile.file_url);
           if (!response.ok) throw new Error("Failed to fetch document");
           const arrayBuffer = await response.arrayBuffer();
@@ -103,6 +102,7 @@ export default function GeneralInfo({ project }) {
         }
 
         if (isSheet) {
+          const XLSX = await import("xlsx");
           const response = await fetch(previewFile.file_url);
           if (!response.ok) throw new Error("Failed to fetch spreadsheet");
           const arrayBuffer = await response.arrayBuffer();
@@ -159,6 +159,62 @@ export default function GeneralInfo({ project }) {
     } finally {
       setUploading(false);
       event.target.value = "";
+    }
+  };
+
+  const handleReplaceFile = async (fileId, nextFile) => {
+    if (!nextFile) return;
+
+    setUploading(true);
+    try {
+      const fileUrl = await uploadToCloudinary(nextFile);
+      const { data, error } = await supabase
+        .from("project_files")
+        .update({
+          file_name: nextFile.name,
+          file_url: fileUrl,
+          file_type: nextFile.type,
+          uploaded_at: new Date().toISOString(),
+        })
+        .eq("id", fileId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setFiles((currentFiles) =>
+        currentFiles.map((file) => (file.id === fileId ? data : file)),
+      );
+      setPreviewFile((currentPreview) =>
+        currentPreview?.id === fileId ? data : currentPreview,
+      );
+    } catch (error) {
+      console.error("Replace file error:", error);
+      await notifyError("Replace file failed", error.message || "Unknown error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileId) => {
+    const confirmed = await notifyConfirm({
+      title: "Delete this file?",
+      text: "This action cannot be undone.",
+      confirmText: "Delete",
+    });
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase.from("project_files").delete().eq("id", fileId);
+      if (error) throw error;
+
+      setFiles((currentFiles) => currentFiles.filter((file) => file.id !== fileId));
+      setPreviewFile((currentPreview) =>
+        currentPreview?.id === fileId ? null : currentPreview,
+      );
+    } catch (error) {
+      console.error("Delete file error:", error);
+      await notifyError("Delete file failed", error.message || "Unknown error");
     }
   };
 
@@ -694,6 +750,32 @@ export default function GeneralInfo({ project }) {
                           >
                             {file.file_name}
                           </div>
+                        </div>
+                        <div className="file-item-actions">
+                          <label className="btn btn-xs btn-outline approval-file-mini-action">
+                            Ganti
+                            <input
+                              type="file"
+                              style={{ display: "none" }}
+                              onChange={(event) => {
+                                handleReplaceFile(file.id, event.target.files?.[0]);
+                                event.target.value = "";
+                              }}
+                              disabled={uploading}
+                              accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx,.doc,.docx,.skp,.dae,.obj,.csv,.glb,.gltf"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline approval-file-mini-action danger"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeleteFile(file.id);
+                            }}
+                            disabled={uploading}
+                          >
+                            Hapus
+                          </button>
                         </div>
                       </div>
                     );

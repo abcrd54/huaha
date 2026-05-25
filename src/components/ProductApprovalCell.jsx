@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
 import ProductApprovalModal from './ProductApprovalModal'
 
 const normalizeRevisions = (value) => {
@@ -45,39 +44,13 @@ const getSummary = (record) => {
   return { className: 'action-waiting' }
 }
 
-export default function ProductApprovalCell({ orderItemId, approvalType, itemCode }) {
-  const [record, setRecord] = useState(null)
-  const [loading, setLoading] = useState(false)
+export default function ProductApprovalCell({ orderItemId, approvalType, itemCode, record: recordProp, onRecordChange }) {
+  const [record, setRecord] = useState(recordProp || null)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
-    if (!orderItemId) {
-      setRecord(null)
-      return
-    }
-
-    const fetchApproval = async () => {
-      setLoading(true)
-      try {
-        const { data, error } = await supabase
-          .from('product_approvals')
-          .select('*')
-          .eq('order_item_id', orderItemId)
-          .eq('approval_type', approvalType.key)
-          .maybeSingle()
-
-        if (error) throw error
-        setRecord(data || null)
-      } catch (error) {
-        console.error('Error fetching product approval:', error)
-        setRecord(null)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchApproval()
-  }, [approvalType.key, orderItemId])
+    setRecord(recordProp || null)
+  }, [recordProp])
 
   const summary = useMemo(() => getSummary(record), [record])
 
@@ -87,9 +60,8 @@ export default function ProductApprovalCell({ orderItemId, approvalType, itemCod
         type="button"
         className={`btn btn-xs approval-trigger action-menu-button ${summary.className}`}
         onClick={() => setOpen(true)}
-        disabled={loading}
       >
-        {loading ? 'Loading...' : approvalType.name.toUpperCase()}
+        {approvalType.name.toUpperCase()}
       </button>
 
       {open && (
@@ -100,7 +72,10 @@ export default function ProductApprovalCell({ orderItemId, approvalType, itemCod
           itemCode={itemCode}
           approvalType={approvalType}
           initialRecord={record}
-          onSaved={setRecord}
+          onSaved={(nextRecord) => {
+            setRecord(nextRecord)
+            onRecordChange?.(nextRecord)
+          }}
         />
       )}
     </>

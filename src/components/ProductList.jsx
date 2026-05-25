@@ -1,25 +1,75 @@
 import { useState, useEffect } from 'react'
-import { SquarePen } from 'lucide-react'
+import { Plus, SquarePen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { formatDisplayDate } from '../lib/date'
 import { useStore } from '../stores/useStore'
 import ProductApprovalCell from './ProductApprovalCell'
 import { notifyError } from '../lib/notify'
 
-export default function ProductList({ onSelectItem, refreshKey = 0 }) {
+const normalizeRevisions = (value) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return []
+  }
+
+  return value.map((revision) => ({
+    ...revision,
+    files: Array.isArray(revision.files)
+      ? revision.files
+      : revision.file_url
+        ? [{ url: revision.file_url, name: revision.file_name || 'File' }]
+        : []
+  }))
+}
+
+export default function ProductList({ onAddItem, onSelectItem, refreshKey = 0 }) {
   const { selectedProject } = useStore()
   const [orderItems, setOrderItems] = useState([])
+  const [approvalRecordsByItem, setApprovalRecordsByItem] = useState({})
   const [loading, setLoading] = useState(false)
 
+  const getActiveWorkflowTarget = (item) => {
+    const records = approvalRecordsByItem[item.id] || []
+
+    const candidates = records
+      .map((record) => {
+        const revisions = normalizeRevisions(record.revisions)
+        const latestRevision = revisions[revisions.length - 1]
+
+        if (!latestRevision?.target_date || latestRevision.status === 'APPROVED') {
+          return null
+        }
+
+        const previousRevision = revisions[revisions.length - 2]
+        const startDateValue =
+          previousRevision?.reviewed_at ||
+          latestRevision.reviewed_at ||
+          latestRevision.uploaded_at ||
+          item.requested_date ||
+          selectedProject?.request_date
+
+        return {
+          approvalType: record.approval_type,
+          startDateValue,
+          targetDateValue: latestRevision.target_date
+        }
+      })
+      .filter(Boolean)
+      .sort((left, right) => new Date(left.targetDateValue).getTime() - new Date(right.targetDateValue).getTime())
+
+    return candidates[0] || null
+  }
+
   const getPriorityState = (item) => {
-    const startDateValue = selectedProject?.request_date || item.requested_date
-    const endDateValue = selectedProject?.initial_date || item.target_date
+    const workflowTarget = getActiveWorkflowTarget(item)
+    const startDateValue = workflowTarget?.startDateValue || item.requested_date || selectedProject?.request_date
+    const endDateValue = workflowTarget?.targetDateValue || item.target_date
 
     if (!startDateValue || !endDateValue) {
       return {
-        ratio: item.priority === 'HIGH' ? 1 : item.priority === 'MEDIUM' ? 0.66 : 0.33,
-        tone: item.priority?.toLowerCase() || 'low',
-        label: item.priority || 'LOW'
+        ratio: 0.18,
+        tone: 'medium',
+        label: 'No active target',
+        sublabel: '-'
       }
     }
 
@@ -38,8 +88,10 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
       tone = 'medium'
     }
 
-    const label = daysLeft < 0 ? `Init overdue ${Math.abs(daysLeft)}d` : `Init ${daysLeft}d left`
-    const sublabel = item.target_date ? `R&D ${formatDisplayDate(item.target_date)}` : 'R&D -'
+    const isWorkflowTarget = Boolean(workflowTarget?.targetDateValue)
+    const labelPrefix = isWorkflowTarget ? 'Owner target' : 'Item target'
+    const label = daysLeft < 0 ? `${labelPrefix} overdue ${Math.abs(daysLeft)}d` : `${labelPrefix} ${daysLeft}d left`
+    const sublabel = endDateValue ? formatDisplayDate(endDateValue) : '-'
     return { ratio, tone, label, sublabel }
   }
 
@@ -61,7 +113,32 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
         .order('no', { ascending: true })
 
       if (error) throw error
-      setOrderItems(data || [])
+      const nextItems = data || []
+      setOrderItems(nextItems)
+
+      if (!nextItems.length) {
+        setApprovalRecordsByItem({})
+        return
+      }
+
+      const itemIds = nextItems.map((item) => item.id)
+      const { data: approvalData, error: approvalError } = await supabase
+        .from('product_approvals')
+        .select('order_item_id, approval_type, revisions')
+        .in('order_item_id', itemIds)
+
+      if (approvalError) throw approvalError
+
+      const groupedRecords = (approvalData || []).reduce((accumulator, record) => {
+        if (!accumulator[record.order_item_id]) {
+          accumulator[record.order_item_id] = []
+        }
+
+        accumulator[record.order_item_id].push(record)
+        return accumulator
+      }, {})
+
+      setApprovalRecordsByItem(groupedRecords)
     } catch (error) {
       console.error('Error fetching order items:', error)
       await notifyError('Failed to load order items', error.message || '')
@@ -78,10 +155,38 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
     { id: 5, name: 'Carton Box', key: 'carton_box' }
   ]
 
+  const handleApprovalRecordChange = (orderItemId, nextRecord) => {
+    setApprovalRecordsByItem((current) => {
+      const next = { ...current }
+      const existingRecords = [...(next[orderItemId] || [])]
+      const existingIndex = existingRecords.findIndex((record) => record.approval_type === nextRecord.approval_type)
+
+      if (existingIndex >= 0) {
+        existingRecords[existingIndex] = nextRecord
+      } else {
+        existingRecords.push(nextRecord)
+      }
+
+      next[orderItemId] = existingRecords
+      return next
+    })
+  }
+
   if (!selectedProject) {
     return (
       <div className="card" style={{ padding: '16px 16px 22px', marginBottom: '20px' }}>
-        <h2 className="table-title">List Product</h2>
+        <div className="product-table-head">
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={onAddItem}
+            disabled
+          >
+            <Plus size={16} />
+            Add Product
+          </button>
+          <h2 className="table-title product-table-title">List Product</h2>
+        </div>
         <div className="table-scroll">
           <table className="table product">
             <thead>
@@ -104,7 +209,6 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
                 <th style={{ width: '74px' }}>Fabric</th>
                 <th style={{ width: '64px' }}>Foam</th>
                 <th style={{ width: '84px' }}>Remarks</th>
-                <th style={{ width: '78px' }}>Requested Date</th>
                 <th style={{ width: '78px' }}>Target Date</th>
                 <th style={{ width: '82px' }}>Priority</th>
                 <th style={{ width: '110px' }}>Aksi</th>
@@ -112,7 +216,7 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
             </thead>
             <tbody>
               <tr>
-                <td colSpan="22" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                <td colSpan="21" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
                   Belum ada project dipilih
                 </td>
               </tr>
@@ -135,7 +239,18 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
 
   return (
     <div className="card" style={{ padding: '16px 16px 22px', marginBottom: '20px' }}>
-      <h2 className="table-title">List Product</h2>
+      <div className="product-table-head">
+        <button
+          type="button"
+          className="btn btn-outline btn-sm"
+          onClick={onAddItem}
+          disabled={!selectedProject}
+        >
+          <Plus size={16} />
+          Add Product
+        </button>
+        <h2 className="table-title product-table-title">List Product</h2>
+      </div>
       <div className="product-status-legend">
         <span className="approval-legend-item">
           <span className="approval-legend-swatch danger" />
@@ -171,17 +286,16 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
               <th style={{ width: '84px' }}>Finishing</th>
               <th style={{ width: '74px' }}>Fabric</th>
               <th style={{ width: '64px' }}>Foam</th>
-              <th style={{ width: '84px' }}>Remarks</th>
-              <th style={{ width: '78px' }}>Requested Date</th>
-              <th style={{ width: '78px' }}>Target Date</th>
-              <th style={{ width: '82px' }}>Priority</th>
-              <th style={{ width: '110px' }}>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
+                <th style={{ width: '84px' }}>Remarks</th>
+                <th style={{ width: '88px' }}>Target Date</th>
+                <th style={{ width: '120px' }}>Priority</th>
+                <th style={{ width: '110px' }}>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
             {orderItems.length === 0 ? (
               <tr>
-                <td colSpan="22" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                <td colSpan="21" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
                   No order items yet. Click "+ Add Item" to create one.
                 </td>
               </tr>
@@ -225,7 +339,6 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
                     <td>{item.fabric || '-'}</td>
                     <td>{item.foam || '-'}</td>
                     <td>{item.remarks || '-'}</td>
-                    <td>{formatDisplayDate(item.requested_date)}</td>
                     <td>{formatDisplayDate(item.target_date)}</td>
                     <td>
                       {(() => {
@@ -256,6 +369,8 @@ export default function ProductList({ onSelectItem, refreshKey = 0 }) {
                             orderItemId={item.id}
                             approvalType={type}
                             itemCode={item.code}
+                            record={(approvalRecordsByItem[item.id] || []).find((record) => record.approval_type === type.key) || null}
+                            onRecordChange={(nextRecord) => handleApprovalRecordChange(item.id, nextRecord)}
                           />
                         ))}
                       </div>
