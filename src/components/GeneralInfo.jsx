@@ -439,14 +439,76 @@ export default function GeneralInfo({ project }) {
     <>
       <section className="card info-card">
         <h2 className="card-heading">General Information</h2>
-        <div className="info-table">
-          {infoRows.map(([label, value]) => (
-            <div key={label} className="info-row">
-              <div className="info-label">{label}</div>
-              <div className="info-separator">:</div>
-              <div className="info-value">{value}</div>
+        <div className="general-info-split">
+          <div className="info-table">
+            {infoRows.map(([label, value]) => (
+              <div key={label} className="info-row">
+                <div className="info-label">{label}</div>
+                <div className="info-separator">:</div>
+                <div className="info-value">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="general-progress-panel">
+            <div className="general-progress-head">
+              <div className="progress-eyebrow">Project Progress</div>
+              <div className="progress-pill">
+                {progressSummary?.totalStages || 0} tracked stages
+              </div>
             </div>
-          ))}
+
+            <div className="general-progress-score-row">
+              <div className="general-progress-score">{progressSummary?.progress || 0}%</div>
+              <div className="general-progress-copy">
+                <div className="general-progress-title">Completion Overview</div>
+                <div className="general-progress-note">
+                  {progressSummary?.completedEquivalent || 0} of {progressSummary?.totalStages || 0} stage-equivalents progressed
+                </div>
+              </div>
+            </div>
+
+            <div className="progress-stack">
+              {(progressSummary?.stats || []).map((stat) => (
+                <div
+                  key={stat.status}
+                  className={`progress-stack-segment ${stat.tone}`}
+                  style={{ width: `${stat.percent}%` }}
+                  title={`${stat.label}: ${stat.count} stages`}
+                />
+              ))}
+            </div>
+
+            <div className="general-progress-stats">
+              {(progressSummary?.stats || Object.entries(statusDisplay).map(([status, config]) => ({
+                status,
+                ...config,
+                count: 0,
+                percent: 0,
+              }))).map((stat) => (
+                <div key={stat.status} className="general-progress-stat">
+                  <div className="progress-stat-top">
+                    <span className={`progress-stat-dot ${stat.tone}`} />
+                    <span className="progress-stat-label">{stat.label}</span>
+                  </div>
+                  <div className="general-progress-stat-value">
+                    {stat.count} <span>{stat.percent}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="general-progress-alerts">
+              <div className="progress-alert-card">
+                <span className="progress-alert-label">Missing Upload</span>
+                <span className="progress-alert-value">{progressSummary?.missingStages || 0} stages</span>
+              </div>
+              <div className="progress-alert-card">
+                <span className="progress-alert-label">Overdue Items</span>
+                <span className="progress-alert-value">{progressSummary?.overdueItems || 0} products</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -512,70 +574,6 @@ export default function GeneralInfo({ project }) {
         {uploading && (
           <span className="loading loading-spinner loading-sm ml-2"></span>
         )}
-      </section>
-
-      <section className="card progress-card">
-        <div className="progress-card-head">
-          <div>
-            <div className="progress-eyebrow">Project Progress</div>
-            <h2 className="progress-title">Completion Overview</h2>
-          </div>
-          <div className="progress-pill">
-            {progressSummary?.totalStages || 0} tracked stages
-          </div>
-        </div>
-
-        <div className="progress-hero">
-          <div className="progress-score-wrap">
-            <div className="progress-score">{progressSummary?.progress || 0}%</div>
-            <div className="progress-score-copy">Project Completion</div>
-            <div className="progress-score-note">
-              {progressSummary?.completedEquivalent || 0} of {progressSummary?.totalStages || 0} stage-equivalents progressed
-            </div>
-          </div>
-
-          <div className="progress-breakdown-wrap">
-            <div className="progress-stack">
-              {(progressSummary?.stats || []).map((stat) => (
-                <div
-                  key={stat.status}
-                  className={`progress-stack-segment ${stat.tone}`}
-                  style={{ width: `${stat.percent}%` }}
-                  title={`${stat.label}: ${stat.count} stages`}
-                />
-              ))}
-            </div>
-
-            <div className="progress-stats-grid">
-              {(progressSummary?.stats || Object.entries(statusDisplay).map(([status, config]) => ({
-                status,
-                ...config,
-                count: 0,
-                percent: 0,
-              }))).map((stat) => (
-                <div key={stat.status} className={`progress-stat-card ${stat.tone}`}>
-                  <div className="progress-stat-top">
-                    <span className={`progress-stat-dot ${stat.tone}`} />
-                    <span className="progress-stat-label">{stat.label}</span>
-                  </div>
-                  <div className="progress-stat-value">{stat.count}</div>
-                  <div className="progress-stat-meta">{stat.percent}% of all stages</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="progress-alert-row">
-              <div className="progress-alert-card">
-                <span className="progress-alert-label">Missing Upload</span>
-                <span className="progress-alert-value">{progressSummary?.missingStages || 0} stages</span>
-              </div>
-              <div className="progress-alert-card">
-                <span className="progress-alert-label">Overdue Items</span>
-                <span className="progress-alert-value">{progressSummary?.overdueItems || 0} products</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
       {previewFile && (
