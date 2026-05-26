@@ -22,9 +22,49 @@ const emptyInfo = [
   ["Initial Date", "-"],
 ];
 
+const approvalTypes = [
+  { key: "sketsa", label: "Sketsa" },
+  { key: "shop_drawing", label: "Shop Drawing" },
+  { key: "tech_drawing", label: "Tech Drawing" },
+  { key: "index_bom", label: "Index BOM" },
+  { key: "carton_box", label: "Carton Box" },
+];
+
+const statusWeights = {
+  EMPTY: 0,
+  REVISION_REQUESTED: 35,
+  PENDING: 70,
+  APPROVED: 100,
+};
+
+const statusDisplay = {
+  APPROVED: { label: "Approved", tone: "approved" },
+  PENDING: { label: "Need Review", tone: "review" },
+  REVISION_REQUESTED: { label: "Revision Required", tone: "revision" },
+  EMPTY: { label: "Missing Upload", tone: "missing" },
+};
+
+const getNormalizedFiles = (revision) => {
+  if (Array.isArray(revision?.files)) return revision.files;
+  if (revision?.file_url) {
+    return [{ url: revision.file_url, name: revision.file_name || "File" }];
+  }
+  return [];
+};
+
+const getLatestStageStatus = (record) => {
+  const revisions = Array.isArray(record?.revisions) ? record.revisions : [];
+  const latest = revisions[revisions.length - 1];
+  if (!latest) return "EMPTY";
+  const files = getNormalizedFiles(latest);
+  if (!files.length) return "EMPTY";
+  return latest.status || "PENDING";
+};
+
 export default function GeneralInfo({ project }) {
   const [uploading, setUploading] = useState(false);
   const [files, setFiles] = useState([]);
+  const [progressSummary, setProgressSummary] = useState(null);
   const [previewFile, setPreviewFile] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
@@ -35,6 +75,7 @@ export default function GeneralInfo({ project }) {
   useEffect(() => {
     if (!project?.id) {
       setFiles([]);
+      setProgressSummary(null);
       setPreviewFile(null);
       return;
     }
@@ -55,6 +96,98 @@ export default function GeneralInfo({ project }) {
     };
 
     fetchFiles();
+  }, [project?.id]);
+
+  useEffect(() => {
+    if (!project?.id) {
+      setProgressSummary(null);
+      return;
+    }
+
+    const fetchProgressSummary = async () => {
+      try {
+        const { data: orderItems, error: itemsError } = await supabase
+          .from("order_items")
+          .select("id, target_date")
+          .eq("project_id", project.id);
+
+        if (itemsError) throw itemsError;
+
+        const items = orderItems || [];
+        if (!items.length) {
+          setProgressSummary({
+            progress: 0,
+            totalStages: 0,
+            completedEquivalent: 0,
+            stats: Object.entries(statusDisplay).map(([status, config]) => ({
+              status,
+              ...config,
+              count: 0,
+              percent: 0,
+            })),
+            overdueItems: 0,
+            missingStages: 0,
+          });
+          return;
+        }
+
+        const itemIds = items.map((item) => item.id);
+        const { data: approvalData, error: approvalsError } = await supabase
+          .from("product_approvals")
+          .select("order_item_id, approval_type, revisions")
+          .in("order_item_id", itemIds);
+
+        if (approvalsError) throw approvalsError;
+
+        const approvalLookup = new Map();
+        (approvalData || []).forEach((record) => {
+          approvalLookup.set(`${record.order_item_id}:${record.approval_type}`, record);
+        });
+
+        const counts = {
+          APPROVED: 0,
+          PENDING: 0,
+          REVISION_REQUESTED: 0,
+          EMPTY: 0,
+        };
+
+        let score = 0;
+        items.forEach((item) => {
+          approvalTypes.forEach((type) => {
+            const record = approvalLookup.get(`${item.id}:${type.key}`);
+            const status = getLatestStageStatus(record);
+            counts[status] += 1;
+            score += statusWeights[status] || 0;
+          });
+        });
+
+        const totalStages = items.length * approvalTypes.length;
+        const progress = totalStages ? Math.round(score / totalStages) : 0;
+        const overdueItems = items.filter((item) => {
+          if (!item.target_date) return false;
+          return new Date(item.target_date).getTime() < new Date().getTime();
+        }).length;
+
+        setProgressSummary({
+          progress,
+          totalStages,
+          completedEquivalent: Math.round(score / 100),
+          stats: Object.entries(statusDisplay).map(([status, config]) => ({
+            status,
+            ...config,
+            count: counts[status],
+            percent: totalStages ? Math.round((counts[status] / totalStages) * 100) : 0,
+          })),
+          overdueItems,
+          missingStages: counts.EMPTY,
+        });
+      } catch (error) {
+        console.error("Error fetching progress summary:", error);
+        setProgressSummary(null);
+      }
+    };
+
+    fetchProgressSummary();
   }, [project?.id]);
 
   useEffect(() => {
@@ -379,6 +512,70 @@ export default function GeneralInfo({ project }) {
         {uploading && (
           <span className="loading loading-spinner loading-sm ml-2"></span>
         )}
+      </section>
+
+      <section className="card progress-card">
+        <div className="progress-card-head">
+          <div>
+            <div className="progress-eyebrow">Project Progress</div>
+            <h2 className="progress-title">Completion Overview</h2>
+          </div>
+          <div className="progress-pill">
+            {progressSummary?.totalStages || 0} tracked stages
+          </div>
+        </div>
+
+        <div className="progress-hero">
+          <div className="progress-score-wrap">
+            <div className="progress-score">{progressSummary?.progress || 0}%</div>
+            <div className="progress-score-copy">Project Completion</div>
+            <div className="progress-score-note">
+              {progressSummary?.completedEquivalent || 0} of {progressSummary?.totalStages || 0} stage-equivalents progressed
+            </div>
+          </div>
+
+          <div className="progress-breakdown-wrap">
+            <div className="progress-stack">
+              {(progressSummary?.stats || []).map((stat) => (
+                <div
+                  key={stat.status}
+                  className={`progress-stack-segment ${stat.tone}`}
+                  style={{ width: `${stat.percent}%` }}
+                  title={`${stat.label}: ${stat.count} stages`}
+                />
+              ))}
+            </div>
+
+            <div className="progress-stats-grid">
+              {(progressSummary?.stats || Object.entries(statusDisplay).map(([status, config]) => ({
+                status,
+                ...config,
+                count: 0,
+                percent: 0,
+              }))).map((stat) => (
+                <div key={stat.status} className={`progress-stat-card ${stat.tone}`}>
+                  <div className="progress-stat-top">
+                    <span className={`progress-stat-dot ${stat.tone}`} />
+                    <span className="progress-stat-label">{stat.label}</span>
+                  </div>
+                  <div className="progress-stat-value">{stat.count}</div>
+                  <div className="progress-stat-meta">{stat.percent}% of all stages</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="progress-alert-row">
+              <div className="progress-alert-card">
+                <span className="progress-alert-label">Missing Upload</span>
+                <span className="progress-alert-value">{progressSummary?.missingStages || 0} stages</span>
+              </div>
+              <div className="progress-alert-card">
+                <span className="progress-alert-label">Overdue Items</span>
+                <span className="progress-alert-value">{progressSummary?.overdueItems || 0} products</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {previewFile && (
