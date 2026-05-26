@@ -39,9 +39,9 @@ const statusWeights = {
 
 const statusDisplay = {
   APPROVED: { label: "Approved", tone: "approved" },
-  PENDING: { label: "Need Review", tone: "review" },
-  REVISION_REQUESTED: { label: "Revision Required", tone: "revision" },
-  EMPTY: { label: "Missing Upload", tone: "missing" },
+  PENDING: { label: "Menunggu Approval", tone: "review" },
+  REVISION_REQUESTED: { label: "Perlu Revisi", tone: "revision" },
+  EMPTY: { label: "Belum Upload", tone: "missing" },
 };
 
 const getNormalizedFiles = (revision) => {
@@ -439,75 +439,51 @@ export default function GeneralInfo({ project }) {
     <>
       <section className="card info-card">
         <h2 className="card-heading">General Information</h2>
-        <div className="general-info-split">
-          <div className="info-table">
-            {infoRows.map(([label, value]) => (
-              <div key={label} className="info-row">
-                <div className="info-label">{label}</div>
-                <div className="info-separator">:</div>
-                <div className="info-value">{value}</div>
-              </div>
+        <div className="info-table">
+          {infoRows.map(([label, value]) => (
+            <div key={label} className="info-row">
+              <div className="info-label">{label}</div>
+              <div className="info-separator">:</div>
+              <div className="info-value">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="general-progress-inline">
+          <div className="general-progress-inline-head">
+            <div className="general-progress-inline-title">Progress Project</div>
+            <div className="general-progress-inline-score">{progressSummary?.progress || 0}%</div>
+          </div>
+
+          <div className="progress-stack compact">
+            {(progressSummary?.stats || []).map((stat) => (
+              <div
+                key={stat.status}
+                className={`progress-stack-segment ${stat.tone}`}
+                style={{ width: `${stat.percent}%` }}
+                title={`${stat.label}: ${stat.count} stages`}
+              />
             ))}
           </div>
 
-          <div className="general-progress-panel">
-            <div className="general-progress-head">
-              <div className="progress-eyebrow">Project Progress</div>
-              <div className="progress-pill">
-                {progressSummary?.totalStages || 0} tracked stages
-              </div>
-            </div>
+          <div className="general-progress-inline-meta">
+            <span>{progressSummary?.completedEquivalent || 0} dari {progressSummary?.totalStages || 0} tahapan approval sudah berjalan</span>
+            <span>{progressSummary?.overdueItems || 0} product melewati target</span>
+          </div>
 
-            <div className="general-progress-score-row">
-              <div className="general-progress-score">{progressSummary?.progress || 0}%</div>
-              <div className="general-progress-copy">
-                <div className="general-progress-title">Completion Overview</div>
-                <div className="general-progress-note">
-                  {progressSummary?.completedEquivalent || 0} of {progressSummary?.totalStages || 0} stage-equivalents progressed
-                </div>
+          <div className="general-progress-inline-legend">
+            {(progressSummary?.stats || Object.entries(statusDisplay).map(([status, config]) => ({
+              status,
+              ...config,
+              count: 0,
+              percent: 0,
+            }))).map((stat) => (
+              <div key={stat.status} className="general-progress-inline-item">
+                <span className={`progress-stat-dot ${stat.tone}`} />
+                <span className="general-progress-inline-label">{stat.label}</span>
+                <span className="general-progress-inline-value">{stat.percent}%</span>
               </div>
-            </div>
-
-            <div className="progress-stack">
-              {(progressSummary?.stats || []).map((stat) => (
-                <div
-                  key={stat.status}
-                  className={`progress-stack-segment ${stat.tone}`}
-                  style={{ width: `${stat.percent}%` }}
-                  title={`${stat.label}: ${stat.count} stages`}
-                />
-              ))}
-            </div>
-
-            <div className="general-progress-stats">
-              {(progressSummary?.stats || Object.entries(statusDisplay).map(([status, config]) => ({
-                status,
-                ...config,
-                count: 0,
-                percent: 0,
-              }))).map((stat) => (
-                <div key={stat.status} className="general-progress-stat">
-                  <div className="progress-stat-top">
-                    <span className={`progress-stat-dot ${stat.tone}`} />
-                    <span className="progress-stat-label">{stat.label}</span>
-                  </div>
-                  <div className="general-progress-stat-value">
-                    {stat.count} <span>{stat.percent}%</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="general-progress-alerts">
-              <div className="progress-alert-card">
-                <span className="progress-alert-label">Missing Upload</span>
-                <span className="progress-alert-value">{progressSummary?.missingStages || 0} stages</span>
-              </div>
-              <div className="progress-alert-card">
-                <span className="progress-alert-label">Overdue Items</span>
-                <span className="progress-alert-value">{progressSummary?.overdueItems || 0} products</span>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </section>

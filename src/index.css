@@ -1033,13 +1033,6 @@ a {
     padding: 16px 24px;
 }
 
-.general-info-split {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    gap: 20px;
-    align-items: start;
-}
-
 .card-heading {
     margin: 0 0 18px;
     color: var(--dark);
@@ -1197,21 +1190,6 @@ a {
   font-size: 13px;
 }
 
-.general-progress-panel {
-    padding: 16px 18px;
-    border: 1px solid #dbe6fa;
-    border-radius: 18px;
-    background: linear-gradient(180deg, #f8fbff 0%, #f3f7ff 100%);
-}
-
-.general-progress-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-
 .progress-eyebrow {
     color: #6d82a7;
     font-size: 11px;
@@ -1231,37 +1209,35 @@ a {
     white-space: nowrap;
 }
 
-.general-progress-score-row {
+.general-progress-inline {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e3eaf5;
+    display: grid;
+    gap: 10px;
+}
+
+.general-progress-inline-head {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 14px;
+    justify-content: space-between;
+    gap: 12px;
 }
 
-.general-progress-score {
-    min-width: 96px;
+.general-progress-inline-title {
+    color: var(--dark);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.general-progress-inline-score {
     color: var(--blue);
-    font-size: 42px;
+    font-size: 26px;
     font-weight: 800;
     line-height: 1;
-    letter-spacing: -0.05em;
-}
-
-.general-progress-copy {
-    min-width: 0;
-}
-
-.general-progress-title {
-    color: var(--dark);
-    font-size: 15px;
-    font-weight: 800;
-}
-
-.general-progress-note {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: 12px;
-    line-height: 1.55;
+    letter-spacing: -0.04em;
 }
 
 .progress-stack {
@@ -1270,6 +1246,10 @@ a {
     border-radius: 999px;
     background: #e6edf9;
     display: flex;
+}
+
+.progress-stack.compact {
+    height: 12px;
 }
 
 .progress-stack-segment {
@@ -1291,18 +1271,6 @@ a {
 
 .progress-stack-segment.missing {
     background: linear-gradient(90deg, #ef4444, #dc2626);
-}
-
-.general-progress-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 14px;
-    margin-top: 14px;
-}
-
-.general-progress-stat {
-    padding: 10px 0;
-    border-bottom: 1px dashed #dbe4f3;
 }
 
 .progress-stat-top {
@@ -1342,47 +1310,37 @@ a {
     text-transform: uppercase;
 }
 
-.general-progress-stat-value {
-    margin-top: 6px;
-    color: var(--dark);
-    font-size: 18px;
-    font-weight: 800;
-}
-
-.general-progress-stat-value span {
-    margin-left: 6px;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.general-progress-alerts {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 14px;
-}
-
-.progress-alert-card {
+.general-progress-inline-meta {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px 14px;
-    border: 1px dashed #ccd9ee;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.76);
-}
-
-.progress-alert-label {
+    flex-wrap: wrap;
+    gap: 10px 18px;
     color: var(--muted);
     font-size: 12px;
     font-weight: 700;
 }
 
-.progress-alert-value {
+.general-progress-inline-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.general-progress-inline-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.general-progress-inline-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.general-progress-inline-value {
     color: var(--dark);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 800;
 }
 
@@ -2089,9 +2047,6 @@ a {
         grid-template-columns: 1fr 1fr;
     }
 
-    .general-info-split {
-        grid-template-columns: 1fr;
-    }
 }
 
 @media (max-width: 820px) {
@@ -2146,14 +2101,7 @@ a {
         grid-template-columns: 1fr;
     }
 
-    .general-progress-head,
-    .general-progress-score-row,
-    .general-progress-alerts,
-    .general-progress-stats {
-        grid-template-columns: 1fr;
-    }
-
-    .general-progress-score-row {
+    .general-progress-inline-head {
         align-items: flex-start;
         flex-direction: column;
     }
